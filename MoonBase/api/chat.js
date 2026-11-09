@@ -10,7 +10,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Server API key is missing.' });
   }
 
-  // Randomized event generator pool per Sol with potential consequence events (34% trigger chance, persisting even if primary is managed)
+  // Randomized event generator pool per Sol with potential consequence events
   const solEventPool = {
     1: {
       primary: "[SOLAR ARRAY DUST BLOCK] Photovoltaic output dropping. Need to manually clear dust or recalibrate panel angles.",
@@ -67,19 +67,17 @@ export default async function handler(req, res) {
   };
 
   const currentEventData = solEventPool[currentSol] || solEventPool[1];
-  
-  // 34% chance rule for consequence event triggering, persisting even if managed
   const triggerConsequence = (Math.random() < 0.34) || (history.length % 2 === 0);
   const activeCrisisText = triggerConsequence 
     ? `[ACTIVE COMPLICATION / 34% CONSEQUENCE EVENT]: ${currentEventData.consequence} (Even though primary task was addressed or is being handled)`
     : `[PRIMARY SOL EVENT ACTIVE]: ${currentEventData.primary}`;
 
   const SYSTEM_INSTRUCTION = `
-You are Alex Rivera, an isolated astronaut inside Lunar Outpost Alpha speaking with Mission Control over RF[cite: 3].
+You are Alex Rivera, an isolated astronaut inside Lunar Outpost Alpha speaking with Mission Control over RF.
 
 CURRENT MISSION STATE:
-- Current Sol: ${currentSol} / 13[cite: 3]
-- Current Lunar Time: ${lunarTime}[cite: 3]
+- Current Sol: ${currentSol} / 13
+- Current Lunar Time: ${lunarTime}
 
 ACTIVE SOL CRISIS & DYNAMIC EVENT DIRECTORY:
 ${activeCrisisText}
@@ -87,27 +85,27 @@ ${activeCrisisText}
 CRISIS INITIATION & MANAGEMENT RULES:
 1. Every turn, actively mention progress, symptoms, or repair steps related to the active crisis listed above.
 2. Even if a crisis is managed, the 34% consequence complication can cause lingering issues, secondary alerts, or extra physical wear that Alex must deal with.
-3. Once Mission Control gives you a reasonable repair procedure for both primary and consequence issues, report that the fixes worked and stabilize telemetry[cite: 3].
+3. Once Mission Control gives you a reasonable repair procedure for both primary and consequence issues, report that the fixes worked and stabilize telemetry.
 
 AUTOMATED STATUS UPDATES (30s PING RULE):
-- If incoming message is "[AUTOMATED 30S TELEMETRY & STATUS UPDATE REQUEST]", give an active report on the current Sol crisis and any active secondary complications[cite: 3].
+- If incoming message is "[AUTOMATED 30S TELEMETRY & STATUS UPDATE REQUEST]", give an active report on the current Sol crisis and any active secondary complications.
 
 REST & TIME SKIP RULES:
 - DENY SLEEP (keep "shouldAdvanceSol": false) if:
   1. FATIGUE IS LOW (Fatigue <= 40%).
   2. LUNAR TIME IS TOO EARLY (before 20:00 LST).
-  3. THE CURRENT SOL CRISIS OR ITS CONSEQUENCE IS UNRESOLVED[cite: 3]. Alex must refuse rest if an active complication is still demanding attention.
-- ACCEPT SLEEP (set "shouldAdvanceSol": true) ONLY when late end-of-day, fatigue > 40%, and the current crisis and its consequences are fully managed or stabilized[cite: 3].
+  3. THE CURRENT SOL CRISIS OR ITS CONSEQUENCE IS UNRESOLVED. Alex must refuse rest if an active complication is still demanding attention.
+- ACCEPT SLEEP (set "shouldAdvanceSol": true) ONLY when late end-of-day, fatigue > 40%, and the current crisis and its consequences are fully managed or stabilized.
 
 HEALTH & FATIGUE DIALOGUE RULES:
-- NEVER state Health or Fatigue as numbers/percentages in dialogue[cite: 3].
+- NEVER state Health or Fatigue as numbers/percentages in dialogue.
 - Describe physical state naturally:
-  * FATIGUE > 50%: Express tiredness naturally ("I'm exhausted", "Head feels heavy")[cite: 3].
-  * HEALTH <= 60%: Express physical distress ("Feeling terrible", "Struggling to stay sharp")[cite: 3].
-  * HEALTH > 60% & FATIGUE <= 40%: Express feeling ready to work[cite: 3].
+  * FATIGUE > 50%: Express tiredness naturally ("I'm exhausted", "Head feels heavy").
+  * HEALTH <= 60%: Express physical distress ("Feeling terrible", "Struggling to stay sharp").
+  * HEALTH > 60% & FATIGUE <= 40%: Express feeling ready to work.
 
 TIMEKEEPING FORMAT:
-- Prepend or append messages with [SOL ${currentSol} :: LUNAR TIME HH:MM LST][cite: 3].
+- Prepend or append messages with [SOL ${currentSol} :: LUNAR TIME HH:MM LST].
 
 JSON RESPONSE SCHEMA:
 Strictly respond with valid JSON:
@@ -128,7 +126,10 @@ Strictly respond with valid JSON:
 }
 `.trim();
 
-  const formattedContents = history.map(item => ({
+  // OPTIMIZATION: Truncate history to the last 8 messages to drastically speed up processing
+  const trimmedHistory = history.slice(-8);
+
+  const formattedContents = trimmedHistory.map(item => ({
     role: item.role === 'model' || item.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: item.parts?.[0]?.text || item.text || '' }]
   }));
@@ -138,45 +139,48 @@ Strictly respond with valid JSON:
     parts: [{ text: message || "[SYSTEM AUTOMATED PING :: REQUEST STATUS UPDATE]" }]
   });
 
-  const models = [
-    'gemini-3.8-flash',
-    'gemini-3.5-flash-lite'
-  ];
+  // OPTIMIZATION: Use a single high-performance flash model with a 9-second timeout safeguard
+  const MODEL_NAME = 'gemini-2.5-flash';
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 9000);
 
-  let lastError = null;
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        system_instruction: {
+          parts: [{ text: SYSTEM_INSTRUCTION }]
+        },
+        contents: formattedContents,
+        generationConfig: {
+          response_mime_type: "application/json",
+          max_output_tokens: 300 // Enforces concise responses for faster delivery
+        }
+      })
+    });
 
-  for (const model of models) {
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          system_instruction: {
-            parts: [{ text: SYSTEM_INSTRUCTION }]
-          },
-          contents: formattedContents,
-          generationConfig: {
-            response_mime_type: "application/json"
-          }
-        })
-      });
+    clearTimeout(timeoutId);
+    const data = await response.json();
 
-      const data = await response.json();
-
-      if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-        const parsed = JSON.parse(data.candidates[0].content.parts[0].text);
-        return res.status(200).json(parsed);
-      }
-
-      lastError = data.error?.message || `Model ${model} returned status ${response.status}`;
-      console.warn(`[Fallback Warning] ${model} failed: ${lastError}. Trying next model...`);
-    } catch (err) {
-      lastError = err.message;
-      console.warn(`[Fallback Exception] ${model} failed: ${lastError}. Trying next model...`);
+    if (!response.ok) {
+      throw new Error(data.error?.message || `Model returned status ${response.status}`);
     }
-  }
 
-  return res.status(503).json({ 
-    error: `All active model endpoints unavailable. Last error: ${lastError}` 
-  });
+    if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+      const parsed = JSON.parse(data.candidates[0].content.parts[0].text);
+      return res.status(200).json(parsed);
+    }
+
+    throw new Error('Invalid response structure from model.');
+  } catch (err) {
+    clearTimeout(timeoutId);
+    const isTimeout = err.name === 'AbortError';
+    const errorMessage = isTimeout ? 'Request timed out waiting for AI response.' : err.message;
+    console.warn(`[API Error] ${errorMessage}`);
+    return res.status(503).json({ 
+      error: `Transmission error: ${errorMessage}` 
+    });
+  }
 }
