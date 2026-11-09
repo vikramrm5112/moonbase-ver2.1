@@ -152,7 +152,8 @@ Strictly respond with valid JSON:
 
     const MODEL_NAME = 'gemini-3.8-flash';
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 9000);
+  // Change this line in api/chat.js:
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`, {
       method: 'POST',
