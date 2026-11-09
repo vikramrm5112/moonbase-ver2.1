@@ -97,7 +97,7 @@ STRICT RESPONSE FORMATTING RULES:
 1. Keep replies extremely concise (1-2 short sentences max). Speak like a stressed astronaut over choppy radio.
 2. Highlight critical hardware failures, warnings, or key alerts in red: <span class="text-red-500 font-bold">[RED_TERM]</span>.
 3. For technical engineering/space jargon, wrap them in a magenta hover tooltip:
-   <span class="group relative cursor-help text-fuchsia-500 underline decoration-dotted">TERM<span class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-zinc-950 border border-fuchsia-500 text-fuchsia-300 text-[10px] p-1 rounded whitespace-nowrap z-50 shadow-md">Definition here</span></span>
+   <span class="custom-tooltip">TERM<span class="tooltip-text">Definition here</span></span>
 4. Prepend or append messages with [SOL ${currentSol} :: ${lunarTime}].
 
 JSON RESPONSE SCHEMA:
@@ -148,7 +148,7 @@ Strictly respond with valid JSON:
             contents: formattedContents,
             generationConfig: {
               response_mime_type: "application/json",
-              max_output_tokens: 150
+              max_output_tokens: 500
             }
           })
         });
@@ -157,7 +157,11 @@ Strictly respond with valid JSON:
         const json = await response.json();
 
         if (response.ok && json.candidates?.[0]?.content?.parts?.[0]?.text) {
-          data = JSON.parse(json.candidates[0].content.parts[0].text);
+          let rawText = json.candidates[0].content.parts[0].text.trim();
+          if (rawText.startsWith("```json")) rawText = rawText.replace(/^```json/, "").replace(/```$/, "").trim();
+          else if (rawText.startsWith("```")) rawText = rawText.replace(/^```/, "").replace(/```$/, "").trim();
+          
+          data = JSON.parse(rawText);
           break;
         }
 
