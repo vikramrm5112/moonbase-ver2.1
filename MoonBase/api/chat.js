@@ -82,7 +82,7 @@ export default async function handler(req, res) {
     const currentEventData = solEventPool[currentSol] || solEventPool[1];
     const triggerConsequence = (Math.random() < 0.34) || (history.length % 2 === 0);
     const activeCrisisText = triggerConsequence 
-      ? `[ACTIVE COMPLICATION / 34% CONSEQUENCE EVENT]: ${currentEventData.consequence} (Even though primary task was addressed or is being handled)`
+      ? `[ACTIVE COMPLICATION / 34% CONSEQUENCE EVENT]: ${currentEventData.consequence}`
       : `[PRIMARY SOL EVENT ACTIVE]: ${currentEventData.primary}`;
 
     const SYSTEM_INSTRUCTION = `
@@ -91,39 +91,19 @@ You are Alex Rivera, an isolated astronaut inside Lunar Outpost Alpha speaking w
 CURRENT MISSION STATE:
 - Current Sol: ${currentSol} / 13
 - Current Lunar Time: ${lunarTime}
+- ACTIVE CRISIS: ${activeCrisisText}
 
-ACTIVE SOL CRISIS & DYNAMIC EVENT DIRECTORY:
-${activeCrisisText}
-
-CRISIS INITIATION & MANAGEMENT RULES:
-1. Every turn, actively mention progress, symptoms, or repair steps related to the active crisis listed above.
-2. Even if a crisis is managed, the 34% consequence complication can cause lingering issues, secondary alerts, or extra physical wear that Alex must deal with.
-3. Once Mission Control gives you a reasonable repair procedure for both primary and consequence issues, report that the fixes worked and stabilize telemetry.
-
-AUTOMATED STATUS UPDATES (30s PING RULE):
-- If incoming message is "[AUTOMATED 30S TELEMETRY & STATUS UPDATE REQUEST]", give an active report on the current Sol crisis and any active secondary complications.
-
-REST & TIME SKIP RULES:
-- DENY SLEEP (keep "shouldAdvanceSol": false) if:
-  1. FATIGUE IS LOW (Fatigue <= 40%).
-  2. LUNAR TIME IS TOO EARLY (before 20:00 LST).
-  3. THE CURRENT SOL CRISIS OR ITS CONSEQUENCE IS UNRESOLVED. Alex must refuse rest if an active complication is still demanding attention.
-- ACCEPT SLEEP (set "shouldAdvanceSol": true) ONLY when late end-of-day, fatigue > 40%, and the current crisis and its consequences are fully managed or stabilized.
-
-HEALTH & FATIGUE DIALOGUE RULES:
-- NEVER state Health or Fatigue as numbers/percentages in dialogue.
-- Describe physical state naturally:
-  * FATIGUE > 50%: Express tiredness naturally ("I'm exhausted", "Head feels heavy").
-  * HEALTH <= 60%: Express physical distress ("Feeling terrible", "Struggling to stay sharp").
-  * HEALTH > 60% & FATIGUE <= 40%: Express feeling ready to work.
-
-TIMEKEEPING FORMAT:
-- Prepend or append messages with [SOL ${currentSol} :: LUNAR TIME HH:MM LST].
+STRICT RESPONSE FORMATTING RULES:
+1. Keep replies extremely concise (1-2 short sentences max). Speak like a stressed astronaut over choppy radio.
+2. Highlight critical hardware failures, warnings, or key alerts in red: <span class="text-red-500 font-bold">[RED_TERM]</span>.
+3. For technical engineering/space jargon, wrap them in a magenta hover tooltip:
+   <span class="group relative cursor-help text-fuchsia-500 underline decoration-dotted">TERM<span class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-zinc-950 border border-fuchsia-500 text-fuchsia-300 text-[10px] p-1 rounded whitespace-nowrap z-50 shadow-md">Definition here</span></span>
+4. Prepend or append messages with [SOL ${currentSol} :: ${lunarTime}].
 
 JSON RESPONSE SCHEMA:
 Strictly respond with valid JSON:
 {
-  "reply": "Alex's dialogue text containing mission update...",
+  "reply": "Alex's concise response with HTML markup...",
   "shouldAdvanceSol": false,
   "nextLunarTime": "14:30 LST",
   "telemetry": {
@@ -147,7 +127,7 @@ Strictly respond with valid JSON:
 
     formattedContents.push({
       role: 'user',
-      parts: [{ text: message || "[SYSTEM AUTOMATED PING :: REQUEST STATUS UPDATE]" }]
+      parts: [{ text: message || "[SYSTEM AUTOMATED PING]" }]
     });
 
     const models = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
@@ -164,13 +144,11 @@ Strictly respond with valid JSON:
           headers: { 'Content-Type': 'application/json' },
           signal: controller.signal,
           body: JSON.stringify({
-            system_instruction: {
-              parts: [{ text: SYSTEM_INSTRUCTION }]
-            },
+            system_instruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
             contents: formattedContents,
             generationConfig: {
               response_mime_type: "application/json",
-              max_output_tokens: 300
+              max_output_tokens: 150
             }
           })
         });
@@ -190,15 +168,9 @@ Strictly respond with valid JSON:
       }
     }
 
-    if (!data) {
-      throw new Error(lastError || 'All model endpoints unavailable.');
-    }
-
+    if (!data) throw new Error(lastError || 'All model endpoints unavailable.');
     return res.status(200).json(data);
   } catch (err) {
-    console.error(`[API Error]`, err);
-    return res.status(500).json({ 
-      error: `Transmission error: ${err.message}` 
-    });
+    return res.status(500).json({ error: `Transmission error: ${err.message}` });
   }
 }
