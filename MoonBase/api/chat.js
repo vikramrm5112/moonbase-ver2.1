@@ -150,40 +150,51 @@ Strictly respond with valid JSON:
       parts: [{ text: message || "[SYSTEM AUTOMATED PING :: REQUEST STATUS UPDATE]" }]
     });
 
-    const MODEL_NAME = 'gemini-3.8-flash';
-    const controller = new AbortController();
-  // Change this line in api/chat.js:
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    const models = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
+    let lastError = null;
+    let data = null;
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
-      body: JSON.stringify({
-        system_instruction: {
-          parts: [{ text: SYSTEM_INSTRUCTION }]
-        },
-        contents: formattedContents,
-        generationConfig: {
-          response_mime_type: "application/json",
-          max_output_tokens: 300
+    for (const model of models) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            system_instruction: {
+              parts: [{ text: SYSTEM_INSTRUCTION }]
+            },
+            contents: formattedContents,
+            generationConfig: {
+              response_mime_type: "application/json",
+              max_output_tokens: 300
+            }
+          })
+        });
+
+        clearTimeout(timeoutId);
+        const json = await response.json();
+
+        if (response.ok && json.candidates?.[0]?.content?.parts?.[0]?.text) {
+          data = JSON.parse(json.candidates[0].content.parts[0].text);
+          break;
         }
-      })
-    });
 
-    clearTimeout(timeoutId);
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error?.message || `Model returned status ${response.status}`);
+        lastError = json.error?.message || `Model ${model} returned status ${response.status}`;
+      } catch (err) {
+        clearTimeout(timeoutId);
+        lastError = err.message;
+      }
     }
 
-    if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-      const parsed = JSON.parse(data.candidates[0].content.parts[0].text);
-      return res.status(200).json(parsed);
+    if (!data) {
+      throw new Error(lastError || 'All model endpoints unavailable.');
     }
 
-    throw new Error('Invalid response structure from model.');
+    return res.status(200).json(data);
   } catch (err) {
     console.error(`[API Error]`, err);
     return res.status(500).json({ 
