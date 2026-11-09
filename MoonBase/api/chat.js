@@ -101,7 +101,7 @@ STRICT RESPONSE FORMATTING RULES:
 4. Prepend or append messages with [SOL ${currentSol} :: ${lunarTime}].
 
 JSON RESPONSE SCHEMA:
-Strictly respond with valid JSON:
+Strictly respond with valid JSON containing NO unescaped quotes inside strings:
 {
   "reply": "Alex's concise response with HTML markup...",
   "shouldAdvanceSol": false,
@@ -161,7 +161,28 @@ Strictly respond with valid JSON:
           if (rawText.startsWith("```json")) rawText = rawText.replace(/^```json/, "").replace(/```$/, "").trim();
           else if (rawText.startsWith("```")) rawText = rawText.replace(/^```/, "").replace(/```$/, "").trim();
           
-          data = JSON.parse(rawText);
+          try {
+            data = JSON.parse(rawText);
+          } catch (parseErr) {
+            // Fallback robust parsing if JSON has minor quote issues
+            const replyMatch = rawText.match(/"reply"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
+            const advanceMatch = rawText.match(/"shouldAdvanceSol"\s*:\s*(true|false)/);
+            const timeMatch = rawText.match(/"nextLunarTime"\s*:\s*"([^"]*)"/);
+            
+            if (replyMatch) {
+              data = {
+                reply: replyMatch[1],
+                shouldAdvanceSol: advanceMatch ? advanceMatch[1] === 'true' : false,
+                nextLunarTime: timeMatch ? timeMatch[1] : lunarTime,
+                telemetry: {
+                  PWR: "75%", BATT: "80%", O2: "94%", H2O: "88%",
+                  FOOD: "80%", RAD: "12%", HEALTH: "98%", FATIGUE: "18%"
+                }
+              };
+            } else {
+              throw parseErr;
+            }
+          }
           break;
         }
 
